@@ -72,6 +72,8 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_branding_enabled BOOLEAN DEF
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS logo_url TEXT;
 
 
+
+
 -- 4. TABLA DE SEGUIMIENTO DE USO (Usage Tracking)
 CREATE TABLE usage_tracking (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,35 +1,28 @@
 spring:
   application:
     name: kredio-backend
-
-  # Configuración de la Base de Datos
   datasource:
-    url: jdbc:postgresql://localhost:5432/dbkredio
-    username: postgres
-    password: 12345678  # <-- CAMBIA ESTO por la contraseña real de tu PostgreSQL
+    url: jdbc:postgresql://localhost:5432/kredio_db
+    username: kredio_user
+    password: kredio_password
     driver-class-name: org.postgresql.Driver
-
-  # Configuración de JPA (Hibernate)
   jpa:
     hibernate:
-      # IMPORTANTE: 'none' porque usaremos Flyway para crear las tablas
-      ddl-auto: none
-      # Muestra las consultas SQL en la consola (útil para depurar)
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
-
-  # Configuración de Flyway (Migraciones de BD)
   flyway:
     enabled: true
-    # Aquí buscará el script SQL
     locations: classpath:db/migration
-    # Permite migrar aunque la base de datos ya tenga tablas (por si acaso)
     baseline-on-migrate: true
 
-  # Configuración de JWT
 jwt:
   secret: kredio-super-secret-key-2026-minimum-256-bits-long-change-in-production
-  expiration: 86400000 # 24 horas en milisegundos
+  expiration: 86400000
+
+logging:
+  level:
+    com.zaxxer.hikari: DEBUG
