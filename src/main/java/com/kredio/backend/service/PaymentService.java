@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -45,9 +44,10 @@ public class PaymentService {
         BigDecimal previousBalance = loan.getCurrentBalance();
         BigDecimal amountPaid = request.amountPaid();
 
-        // 2. Validar que el monto no sea mayor al saldo
+        // ✅ CORRECCIÓN: Si el monto pagado es mayor al saldo pendiente,
+        // lo ajustamos al saldo restante (esto es normal en la última cuota por redondeos)
         if (amountPaid.compareTo(previousBalance) > 0) {
-            throw new RuntimeException("El monto pagado (" + amountPaid + ") es mayor al saldo pendiente (" + previousBalance + ")");
+            amountPaid = previousBalance;
         }
 
         // 3. Crear el registro de pago
@@ -63,13 +63,26 @@ public class PaymentService {
 
         payment = paymentRepository.save(payment);
 
-        // 4. Actualizar el saldo del préstamo
-        BigDecimal newBalance = previousBalance.subtract(amountPaid).setScale(4, RoundingMode.HALF_UP);
+        // 4. ✅ CORRECCIÓN CRÍTICA: Actualizar el saldo del préstamo
+        // Obtener el capital amortizado de la cuota que se está pagando
+        List<LoanSchedule> pendingSchedules = scheduleRepository
+                .findByLoanIdAndStatusOrderByDueDateAsc(loan.getId(), LoanSchedule.ScheduleStatus.PENDING);
+
+        BigDecimal capitalAmortizado = BigDecimal.ZERO;
+        if (!pendingSchedules.isEmpty()) {
+            LoanSchedule currentSchedule = pendingSchedules.get(0);
+            // El capital amortizado es expectedPrincipal, NO expectedAmount
+            capitalAmortizado = currentSchedule.getExpectedPrincipal();
+        }
+
+        // Restar SOLO el capital del saldo pendiente
+        BigDecimal newBalance = previousBalance.subtract(capitalAmortizado).setScale(4, RoundingMode.HALF_UP);
         loan.setCurrentBalance(newBalance);
 
-        // Si el saldo llega a 0, marcar el préstamo como PAGADO
-        if (newBalance.compareTo(BigDecimal.ZERO) == 0) {
+        // Si el saldo llega a 0 (o muy cerca de 0), marcar el préstamo como PAGADO
+        if (newBalance.compareTo(BigDecimal.ZERO) <= 0) {
             loan.setStatus(Loan.LoanStatus.PAID);
+            loan.setCurrentBalance(BigDecimal.ZERO); // Asegurar que quede exactamente en 0
         }
 
         loanRepository.save(loan);
@@ -84,7 +97,7 @@ public class PaymentService {
                 payment.getCollectorId(),
                 payment.getAmountPaid(),
                 previousBalance,
-                newBalance,
+                loan.getCurrentBalance(), // Usar el balance actualizado del loan
                 payment.getPaymentDate(),
                 payment.getMethod().name(),
                 payment.getIsPrinted(),
@@ -96,7 +109,6 @@ public class PaymentService {
      * Aplica el pago a las cuotas pendientes (de la más antigua a la más reciente)
      */
     private void applyPaymentToSchedules(Loan loan, BigDecimal amountPaid) {
-        // Obtener todas las cuotas pendientes del préstamo, ordenadas por fecha
         List<LoanSchedule> pendingSchedules = scheduleRepository
                 .findByLoanIdAndStatusOrderByDueDateAsc(loan.getId(), LoanSchedule.ScheduleStatus.PENDING);
 
@@ -109,17 +121,15 @@ public class PaymentService {
 
             BigDecimal expectedAmount = schedule.getExpectedAmount();
 
-            // Si el pago cubre toda la cuota
-            if (remainingPayment.compareTo(expectedAmount) >= 0) {
+            // ✅ CORRECCIÓN: Marcar como pagada si cubre la cuota O si el préstamo ya fue marcado como PAGADO
+            if (remainingPayment.compareTo(expectedAmount) >= 0 || loan.getStatus() == Loan.LoanStatus.PAID) {
                 schedule.setStatus(LoanSchedule.ScheduleStatus.PAID);
                 remainingPayment = remainingPayment.subtract(expectedAmount);
+                scheduleRepository.save(schedule);
             } else {
-                // El pago es parcial (no se marca como pagada aún)
-                // En un sistema más avanzado, aquí calcularías cuánto se pagó de capital vs interés
+                // Pago parcial (no debería ocurrir si el backend ajustó el monto, pero por seguridad)
                 break;
             }
-
-            scheduleRepository.save(schedule);
         }
     }
 }

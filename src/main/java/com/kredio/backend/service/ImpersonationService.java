@@ -37,12 +37,16 @@ public class ImpersonationService {
 
         impersonationLogRepository.save(log);
 
-        // Generar token con los datos del usuario objetivo
+        // TODO: En el futuro, obtén los permisos reales del usuario objetivo desde la BD
+        List<String> permissions = List.of("USER:READ", "LOAN:READ", "LOAN:CREATE", "CLIENT:READ", "REPORT:VIEW");
+
+        // Generar token con los datos del usuario objetivo y sus permisos
         return jwtUtil.generateToken(
                 targetUser.getId(),
                 targetUser.getTenantId(),
                 targetUser.getRole(),
-                targetUser.getEmail()
+                targetUser.getEmail(),
+                permissions // ✅ 5to argumento agregado
         );
     }
 

@@ -13,8 +13,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -28,25 +29,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
-        // IMPORTANTE: Ignorar peticiones OPTIONS (CORS preflight)
+        // Ignorar peticiones OPTIONS (CORS preflight)
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             filterChain.doFilter(request, response);
             return;
         }
 
         String path = request.getRequestURI();
-        log.debug("Filtro JWT procesando: {}", path);
 
-        // IMPORTANTE: Ignorar endpoints públicos
+        // Ignorar endpoints públicos
         if (path.startsWith("/api/v1/auth/")) {
-            log.debug("Endpoint público, saltando filtro JWT: {}", path);
             filterChain.doFilter(request, response);
             return;
         }
 
         String authHeader = request.getHeader("Authorization");
-
-        // Si no hay header o no empieza con "Bearer ", continúa sin autenticar
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
@@ -60,14 +57,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UUID tenantId = jwtUtil.getTenantIdFromToken(token);
                 String role = jwtUtil.getRoleFromToken(token);
 
-                log.info("Token válido - User: {}, Role: {}", userId, role);
+                // ✅ EXTRAER PERMISOS DEL TOKEN
+                List<String> permissions = jwtUtil.getPermissionsFromToken(token);
+
+                // ✅ CONVERTIR A AUTHORITIES DE SPRING
+                List<SimpleGrantedAuthority> authorities = permissions.stream()
+                        .map(SimpleGrantedAuthority::new)
+                        .collect(Collectors.toList());
+
+                // Agregar el rol como autoridad también para compatibilidad con @PreAuthorize("hasRole('ADMIN')")
+                authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
 
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                userId,
-                                null,
-                                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
-                        );
+                        new UsernamePasswordAuthenticationToken(userId, null, authorities);
 
                 request.setAttribute("tenantId", tenantId);
                 request.setAttribute("userId", userId);

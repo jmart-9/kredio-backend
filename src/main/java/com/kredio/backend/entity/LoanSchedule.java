@@ -48,6 +48,9 @@ public class LoanSchedule {
     @Enumerated(EnumType.STRING)
     private ScheduleStatus status;
 
+    public void setPaidDate(LocalDate now) {
+    }
+
     public enum ScheduleStatus {
         PENDING, PAID, OVERDUE
     }

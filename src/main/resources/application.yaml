@@ -2,7 +2,7 @@ spring:
   application:
     name: kredio-backend
   datasource:
-    url: jdbc:postgresql://localhost:5432/kredio_db
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/kredio_db
     username: kredio_user
     password: kredio_password
     driver-class-name: org.postgresql.Driver
@@ -18,6 +18,7 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    out-of-order: true
 
 jwt:
   secret: kredio-super-secret-key-2026-minimum-256-bits-long-change-in-production
