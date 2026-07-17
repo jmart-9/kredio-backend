@@ -1,4 +1,4 @@
-package com.kredio.backend;
+package com.kredio.backend.config;
 
 import com.kredio.backend.entity.Tenant; // <-- Ajusta el nombre si tu entidad se llama diferente
 import com.kredio.backend.entity.User;
