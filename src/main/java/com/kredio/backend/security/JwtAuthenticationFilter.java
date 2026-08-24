@@ -1,5 +1,7 @@
 package com.kredio.backend.security;
 
+import com.kredio.backend.entity.Tenant;
+import com.kredio.backend.repository.TenantRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,12 +25,12 @@ import java.util.stream.Collectors;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+    private final TenantRepository tenantRepository; // ✅ AGREGADO
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-
         // Ignorar peticiones OPTIONS (CORS preflight)
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             filterChain.doFilter(request, response);
@@ -50,22 +52,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String token = authHeader.substring(7);
-
         try {
             if (jwtUtil.validateToken(token)) {
                 UUID userId = jwtUtil.getUserIdFromToken(token);
                 UUID tenantId = jwtUtil.getTenantIdFromToken(token);
                 String role = jwtUtil.getRoleFromToken(token);
-
-                // ✅ EXTRAER PERMISOS DEL TOKEN
                 List<String> permissions = jwtUtil.getPermissionsFromToken(token);
 
-                // ✅ CONVERTIR A AUTHORITIES DE SPRING
+                // ✅ NUEVO: Obtener el schemaName del tenant
+                String schemaName = tenantRepository.findById(tenantId)
+                        .map(Tenant::getSchemaName)
+                        .orElse("public");
+
                 List<SimpleGrantedAuthority> authorities = permissions.stream()
                         .map(SimpleGrantedAuthority::new)
                         .collect(Collectors.toList());
-
-                // Agregar el rol como autoridad también para compatibilidad con @PreAuthorize("hasRole('ADMIN')")
                 authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
 
                 UsernamePasswordAuthenticationToken authentication =
@@ -74,6 +75,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 request.setAttribute("tenantId", tenantId);
                 request.setAttribute("userId", userId);
                 request.setAttribute("role", role);
+
+                // ✅ NUEVO: Establecer el contexto del schema para Hibernate
+                TenantContext.setCurrentSchema(schemaName);
+
+                log.debug("Schema establecido para usuario {}: {}", userId, schemaName);
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } else {
@@ -84,6 +90,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.clearContext();
         }
 
-        filterChain.doFilter(request, response);
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
+            // ✅ Limpiar el contexto al finalizar la petición
+            TenantContext.clear();
+        }
     }
 }

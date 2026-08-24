@@ -48,7 +48,11 @@ public class LoanSchedule {
     @Enumerated(EnumType.STRING)
     private ScheduleStatus status;
 
-    public void setPaidDate(LocalDate now) {
+    @Column(name = "paid_date")  // ✅ AGREGADO
+    private LocalDate paidDate;  // ✅ AGREGADO
+
+    public void setPaidDate(LocalDate paidDate) {
+        this.paidDate = paidDate;
     }
 
     public enum ScheduleStatus {

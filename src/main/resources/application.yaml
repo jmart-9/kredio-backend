@@ -20,6 +20,7 @@ spring:
     baseline-on-migrate: true
     out-of-order: true
 
+# ✅ CORRECCIÓN: 'jwt' y 'logging' deben estar al mismo nivel que 'spring', NO indentados debajo de él.
 jwt:
   secret: kredio-super-secret-key-2026-minimum-256-bits-long-change-in-production
   expiration: 86400000
@@ -27,3 +28,5 @@ jwt:
 logging:
   level:
     com.zaxxer.hikari: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE

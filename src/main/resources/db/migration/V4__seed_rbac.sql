@@ -1,40 +1,60 @@
--- 1. Insertar Permisos Base
-INSERT INTO permissions (id, code, name, category, description) VALUES
-(gen_random_uuid(), 'USER:CREATE', 'Crear Usuario', 'USERS', 'Puede crear nuevos usuarios'),
-(gen_random_uuid(), 'USER:READ', 'Ver Usuarios', 'USERS', 'Puede ver la lista de usuarios'),
-(gen_random_uuid(), 'USER:UPDATE', 'Editar Usuario', 'USERS', 'Puede editar usuarios'),
-(gen_random_uuid(), 'USER:DELETE', 'Eliminar Usuario', 'USERS', 'Puede eliminar usuarios'),
-(gen_random_uuid(), 'LOAN:CREATE', 'Crear Préstamo', 'LOANS', 'Puede crear nuevos préstamos'),
-(gen_random_uuid(), 'LOAN:READ', 'Ver Préstamos', 'LOANS', 'Puede ver préstamos'),
-(gen_random_uuid(), 'LOAN:UPDATE', 'Editar Préstamo', 'LOANS', 'Puede editar préstamos'),
-(gen_random_uuid(), 'LOAN:PAYMENT', 'Registrar Pago', 'LOANS', 'Puede registrar pagos a préstamos'),
-(gen_random_uuid(), 'CLIENT:CREATE', 'Crear Cliente', 'CLIENTS', 'Puede crear nuevos clientes'),
-(gen_random_uuid(), 'CLIENT:READ', 'Ver Clientes', 'CLIENTS', 'Puede ver clientes'),
-(gen_random_uuid(), 'REPORT:VIEW', 'Ver Reportes', 'REPORTS', 'Puede ver reportes y dashboard'),
-(gen_random_uuid(), 'CONFIG:MANAGE', 'Gestionar Configuración', 'CONFIG', 'Puede cambiar configuración del tenant'),
-(gen_random_uuid(), 'AUDIT:READ', 'Ver Auditoría', 'AUDIT', 'Puede ver logs y auditoría'),
-(gen_random_uuid(), 'GLOBAL:MANAGE', 'Gestión Global', 'GLOBAL', 'Acceso total a todos los tenants y configuración');
+-- =============================================================================
+-- KREDIO V4 - Seed de RBAC (Role-Based Access Control) - 100% Idempotente
+-- =============================================================================
 
--- 2. Insertar Roles Globales (tenant_id = NULL)
--- Nota: Reemplaza los UUIDs de permission_id con los generados arriba en tu ejecución real,
--- o usa una consulta CTE para hacerlo dinámico. Aquí usamos una aproximación segura:
+-- 1. INSERTAR PERMISOS BASE
+INSERT INTO permissions (code, name, category, description) VALUES
+('USER:CREATE', 'Crear Usuario', 'USERS', 'Puede crear nuevos usuarios'),
+('USER:READ', 'Ver Usuarios', 'USERS', 'Puede ver la lista de usuarios'),
+('USER:UPDATE', 'Editar Usuario', 'USERS', 'Puede editar usuarios'),
+('USER:DELETE', 'Eliminar Usuario', 'USERS', 'Puede eliminar usuarios'),
+('LOAN:CREATE', 'Crear Préstamo', 'LOANS', 'Puede crear nuevos préstamos'),
+('LOAN:READ', 'Ver Préstamos', 'LOANS', 'Puede ver préstamos'),
+('LOAN:UPDATE', 'Editar Préstamo', 'LOANS', 'Puede editar préstamos'),
+('LOAN:PAYMENT', 'Registrar Pago', 'LOANS', 'Puede registrar pagos a préstamos'),
+('CLIENT:CREATE', 'Crear Cliente', 'CLIENTS', 'Puede crear nuevos clientes'),
+('CLIENT:READ', 'Ver Clientes', 'CLIENTS', 'Puede ver clientes'),
+('REPORT:VIEW', 'Ver Reportes', 'REPORTS', 'Puede ver reportes y dashboard'),
+('CONFIG:MANAGE', 'Gestionar Configuración', 'CONFIG', 'Puede cambiar configuración del tenant'),
+('AUDIT:READ', 'Ver Auditoría', 'AUDIT', 'Puede ver logs y auditoría'),
+('GLOBAL:MANAGE', 'Gestión Global', 'GLOBAL', 'Acceso total a todos los tenants')
+ON CONFLICT (code) DO NOTHING;
 
--- Rol: Admin Global (Tiene todos los permisos, incluyendo GLOBAL:MANAGE)
-INSERT INTO roles (id, tenant_id, name, description, is_global, is_system)
-VALUES (gen_random_uuid(), NULL, 'ADMIN_GLOBAL', 'Administrador con acceso total a todo el SaaS', true, true);
+-- 2. INSERTAR ROLES GLOBALES
+INSERT INTO roles (tenant_id, name, description, is_global, is_system) VALUES
+(NULL, 'ADMIN_GLOBAL', 'Administrador con acceso total a todo el SaaS', true, true),
+(NULL, 'TECH', 'Soporte técnico con acceso de lectura y edición limitada', true, true),
+(NULL, 'ADMIN_TENANT', 'Administrador de una financiera/tenant específica', true, true),
+(NULL, 'COBRADOR', 'Usuario operativo que registra pagos y ve su cartera', true, true),
+(NULL, 'AUDITOR', 'Usuario que solo puede ver reportes, logs y auditoría', true, true)
+ON CONFLICT (tenant_id, name) DO NOTHING;
 
--- Rol: Tech Support
-INSERT INTO roles (id, tenant_id, name, description, is_global, is_system)
-VALUES (gen_random_uuid(), NULL, 'TECH', 'Soporte técnico con acceso de lectura y edición limitada', true, true);
+-- 3. ASIGNAR PERMISOS A ROLES (Idempotente)
+-- Admin Global: Todos los permisos
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r CROSS JOIN permissions p WHERE r.name = 'ADMIN_GLOBAL'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
 
--- Rol: Admin Tenant (Se creará por defecto para cada tenant, pero definimos la plantilla global)
-INSERT INTO roles (id, tenant_id, name, description, is_global, is_system)
-VALUES (gen_random_uuid(), NULL, 'ADMIN_TENANT', 'Administrador de una financiera/tenant específica', true, true);
+-- Tech: Permisos de soporte
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r, permissions p
+WHERE r.name = 'TECH' AND p.code IN ('USER:READ', 'LOAN:READ', 'CLIENT:READ', 'REPORT:VIEW', 'AUDIT:READ')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
 
--- Rol: Cobrador/Cajero
-INSERT INTO roles (id, tenant_id, name, description, is_global, is_system)
-VALUES (gen_random_uuid(), NULL, 'COBRADOR', 'Usuario operativo que registra pagos y ve su cartera', true, true);
+-- Admin Tenant: Permisos operativos completos
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r, permissions p
+WHERE r.name = 'ADMIN_TENANT' AND p.code NOT IN ('GLOBAL:MANAGE')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
 
--- Rol: Auditor
-INSERT INTO roles (id, tenant_id, name, description, is_global, is_system)
-VALUES (gen_random_uuid(), NULL, 'AUDITOR', 'Usuario que solo puede ver reportes, logs y auditoría', true, true);
+-- Cobrador: Permisos de cobranza
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r, permissions p
+WHERE r.name = 'COBRADOR' AND p.code IN ('CLIENT:READ', 'LOAN:READ', 'LOAN:PAYMENT', 'REPORT:VIEW')
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+-- Auditor: Solo lectura
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM roles r, permissions p
+WHERE r.name = 'AUDITOR' AND p.category IN ('REPORTS', 'AUDIT')
+ON CONFLICT (role_id, permission_id) DO NOTHING;

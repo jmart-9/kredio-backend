@@ -1,6 +1,10 @@
 package com.kredio.backend.controller;
 
-import com.kredio.backend.dto.*;
+import com.kredio.backend.dto.PortfolioResponse;
+import com.kredio.backend.dto.PortfolioRequest;
+import com.kredio.backend.dto.PortfolioMetrics;
+import com.kredio.backend.dto.ClientResponse;
+import com.kredio.backend.dto.AssignClientRequest;
 import com.kredio.backend.service.PortfolioService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -81,6 +85,7 @@ public class PortfolioController {
         portfolioService.deletePortfolio(id, tenantId);
         return ResponseEntity.ok().build();
     }
+
     @GetMapping("/{id}/clients")
     public ResponseEntity<List<ClientResponse>> getClientsByPortfolio(
             @PathVariable UUID id,

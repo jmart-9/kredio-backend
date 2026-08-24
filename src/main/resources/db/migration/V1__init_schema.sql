@@ -1,92 +1,89 @@
 -- =============================================================================
--- KREDIO - Esquema de Base de Datos Multi-Tenant (PostgreSQL 16+)
--- Migración V1: Esquema inicial
+-- KREDIO - Migración V1: Esquema inicial (Tablas de Tenant)
+-- NOTA: La tabla 'tenants' es GLOBAL y reside en el schema 'public' (gestionada por JPA).
 -- =============================================================================
 
--- 1. CONFIGURACIÓN INICIAL
-SET search_path TO public;
-
--- =============================================================================
--- 2. TABLAS GLOBALES (Sin tenant_id)
--- =============================================================================
-
-CREATE TABLE tenants (
+-- 1. TABLA DE USUARIOS
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(100) NOT NULL,
-    subdomain VARCHAR(50) UNIQUE NOT NULL, -- ej: financiera-x.kredio.com
-    status VARCHAR(20) DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'SUSPENDED', 'CANCELLED')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- =============================================================================
--- 3. TABLAS MULTI-TENANT (Todas con tenant_id)
--- =============================================================================
-
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    role VARCHAR(30) NOT NULL CHECK (role IN ('ADMIN', 'COLLECTOR', 'AUDITOR')),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    role VARCHAR(30) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(100) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     is_active BOOLEAN DEFAULT true,
+    failed_login_attempts INT DEFAULT 0,
+    account_locked_until TIMESTAMP WITH TIME ZONE,
+    last_login_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(tenant_id, email)
 );
 
-CREATE TABLE clients (
+-- 2. TABLA DE CLIENTES
+CREATE TABLE IF NOT EXISTS clients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    portfolio_id UUID,
     full_name VARCHAR(150) NOT NULL,
-    dpi_or_id VARCHAR(50) NOT NULL, -- DPI, DUI, Cédula, etc.
-    phone VARCHAR(20),
+    dpi_or_id VARCHAR(50) NOT NULL,
+    email VARCHAR(100),
     address TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE loans (
+-- 3. TABLA DE PRÉSTAMOS
+CREATE TABLE IF NOT EXISTS loans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    client_id UUID NOT NULL REFERENCES clients(id),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    portfolio_id UUID,
+    client_id UUID NOT NULL,
     principal_amount NUMERIC(19,4) NOT NULL CHECK (principal_amount > 0),
-    interest_rate NUMERIC(5,2) NOT NULL CHECK (interest_rate >= 0), -- Ej: 5.50
+    interest_rate NUMERIC(5,2) NOT NULL CHECK (interest_rate >= 0),
+    rate_type VARCHAR(20) DEFAULT 'ANNUAL',
+    payment_frequency VARCHAR(20) DEFAULT 'MONTHLY',
+    amortization_method VARCHAR(20) DEFAULT 'FRENCH',
+    opening_date DATE NOT NULL,
     term_months INT NOT NULL CHECK (term_months > 0),
-    status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACTIVE', 'PAID', 'DEFAULTED')),
-    current_balance NUMERIC(19,4) NOT NULL CHECK (current_balance >= 0),
+    current_balance NUMERIC(19,4) NOT NULL,
+    status VARCHAR(20) DEFAULT 'PENDING',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE loan_schedules (
+-- 4. TABLA DE CUOTAS (Loan Schedule)
+CREATE TABLE IF NOT EXISTS loan_schedules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    loan_id UUID NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    loan_id UUID NOT NULL,
     installment_number INT NOT NULL CHECK (installment_number > 0),
     due_date DATE NOT NULL,
-    expected_amount NUMERIC(19,4) NOT NULL CHECK (expected_amount >= 0),
-    expected_principal NUMERIC(19,4) NOT NULL CHECK (expected_principal >= 0),
-    expected_interest NUMERIC(19,4) NOT NULL CHECK (expected_interest >= 0),
-    status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PAID', 'OVERDUE')),
+    expected_amount NUMERIC(19,4) NOT NULL,
+    expected_principal NUMERIC(19,4) NOT NULL,
+    expected_interest NUMERIC(19,4) NOT NULL,
+    paid_date TIMESTAMP WITH TIME ZONE,
+    status VARCHAR(20) DEFAULT 'PENDING',
     UNIQUE(loan_id, installment_number)
 );
 
-CREATE TABLE payments (
+-- 5. TABLA DE PAGOS
+CREATE TABLE IF NOT EXISTS payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    loan_id UUID NOT NULL REFERENCES loans(id),
-    collector_id UUID NOT NULL REFERENCES users(id),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    loan_id UUID NOT NULL,
+    collector_id UUID NOT NULL,
     amount_paid NUMERIC(19,4) NOT NULL CHECK (amount_paid > 0),
     payment_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    method VARCHAR(20) DEFAULT 'CASH' CHECK (method IN ('CASH', 'TRANSFER', 'OTHER')),
-    is_printed BOOLEAN DEFAULT false, -- Controla si se imprimió el ticket físico
+    method VARCHAR(20) DEFAULT 'CASH',
+    is_printed BOOLEAN DEFAULT false,
     synced_from_offline BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE audit_logs (
+-- 6. TABLA DE AUDITORÍA
+CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    user_id UUID, -- Puede ser NULL si fue una acción del sistema
-    action VARCHAR(10) NOT NULL CHECK (action IN ('INSERT', 'UPDATE', 'DELETE')),
+    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+    user_id UUID,
+    action VARCHAR(10) NOT NULL,
     table_name VARCHAR(50) NOT NULL,
     record_id UUID NOT NULL,
     old_data JSONB,
@@ -94,66 +91,16 @@ CREATE TABLE audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- =============================================================================
--- 4. ÍNDICES CRÍTICOS (Rendimiento Multi-Tenant)
--- =============================================================================
-
-CREATE INDEX idx_users_tenant ON users(tenant_id);
-CREATE INDEX idx_clients_tenant ON clients(tenant_id);
-CREATE INDEX idx_clients_search ON clients(tenant_id, dpi_or_id); -- Búsqueda rápida por DPI
-CREATE INDEX idx_loans_tenant_status ON loans(tenant_id, status);
-CREATE INDEX idx_loans_client ON loans(tenant_id, client_id);
-CREATE INDEX idx_payments_tenant_loan ON payments(tenant_id, loan_id);
-CREATE INDEX idx_payments_date ON payments(tenant_id, payment_date);
-CREATE INDEX idx_audit_tenant_time ON audit_logs(tenant_id, created_at DESC);
-
--- =============================================================================
--- 5. ROW-LEVEL SECURITY (RLS) - EL ESCUDO INVISIBLE
--- =============================================================================
-
--- Habilitar RLS en todas las tablas multi-tenant
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
-ALTER TABLE loans ENABLE ROW LEVEL SECURITY;
-ALTER TABLE loan_schedules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
-
--- Política de aislamiento: La DB filtra automáticamente por tenant_id
-CREATE POLICY tenant_isolation_policy ON users FOR ALL USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
-CREATE POLICY tenant_isolation_policy ON clients FOR ALL USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
-CREATE POLICY tenant_isolation_policy ON loans FOR ALL USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
-CREATE POLICY tenant_isolation_policy ON loan_schedules FOR ALL USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
-CREATE POLICY tenant_isolation_policy ON payments FOR ALL USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
-CREATE POLICY tenant_isolation_policy ON audit_logs FOR ALL USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
-
--- Política especial para audit_logs: SOLO INSERTAR (Append-Only Inmutable)
-CREATE POLICY audit_append_only ON audit_logs FOR INSERT WITH CHECK (true);
-
--- =============================================================================
--- 6. TRIGGER AUTOMÁTICO DE AUDITORÍA
--- =============================================================================
-
-CREATE OR REPLACE FUNCTION audit_trigger_func()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF (TG_OP = 'DELETE') THEN
-        INSERT INTO audit_logs (tenant_id, user_id, action, table_name, record_id, old_data, new_data)
-        VALUES (OLD.tenant_id, current_setting('app.current_user_id', true)::uuid, 'DELETE', TG_TABLE_NAME, OLD.id, to_jsonb(OLD), NULL);
-        RETURN OLD;
-    ELSIF (TG_OP = 'UPDATE') THEN
-        INSERT INTO audit_logs (tenant_id, user_id, action, table_name, record_id, old_data, new_data)
-        VALUES (NEW.tenant_id, current_setting('app.current_user_id', true)::uuid, 'UPDATE', TG_TABLE_NAME, NEW.id, to_jsonb(OLD), to_jsonb(NEW));
-        RETURN NEW;
-    ELSIF (TG_OP = 'INSERT') THEN
-        INSERT INTO audit_logs (tenant_id, user_id, action, table_name, record_id, old_data, new_data)
-        VALUES (NEW.tenant_id, current_setting('app.current_user_id', true)::uuid, 'INSERT', TG_TABLE_NAME, NEW.id, NULL, to_jsonb(NEW));
-        RETURN NEW;
-    END IF;
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Aplicar el trigger a las tablas críticas financieras
-CREATE TRIGGER audit_loans_trigger AFTER INSERT OR UPDATE OR DELETE ON loans FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
-CREATE TRIGGER audit_payments_trigger AFTER INSERT OR UPDATE OR DELETE ON payments FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+-- ÍNDICES CRÍTICOS
+CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_clients_tenant ON clients(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_loans_tenant ON loans(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_loans_client ON loans(client_id);
+CREATE INDEX IF NOT EXISTS idx_loan_schedules_tenant ON loan_schedules(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_loan_schedules_loan ON loan_schedules(loan_id);
+CREATE INDEX IF NOT EXISTS idx_loan_schedules_due_date ON loan_schedules(due_date);
+CREATE INDEX IF NOT EXISTS idx_payments_tenant ON payments(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_payments_loan ON payments(loan_id);
+CREATE INDEX IF NOT EXISTS idx_audit_tenant ON audit_logs(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
