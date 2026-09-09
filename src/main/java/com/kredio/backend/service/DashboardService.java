@@ -49,7 +49,7 @@ public class DashboardService {
 
         // 3. Próximos vencimientos (7 días)
         BigDecimal upcomingAmount = scheduleRepository.sumExpectedPaymentsBetween(tenantId, today, nextWeek);
-        int upcomingCount = scheduleRepository.countPendingSchedulesBetween(tenantId, today, nextWeek);
+        int upcomingCount = (int) scheduleRepository.countPendingSchedulesBetween(tenantId, today, nextWeek);
 
         // 4. Lista detallada de próximos vencimientos
         List<DashboardStatsDTO.UpcomingPaymentDTO> upcomingPayments = buildUpcomingPayments(tenantId, today, nextWeek);

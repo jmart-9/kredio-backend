@@ -77,7 +77,7 @@ public class AuthService {
         } else {
             // Permisos por defecto para ADMIN_TENANT y otros roles operativos
             permissions = List.of(
-                    "LOAN:READ", "LOAN:CREATE", "LOAN:UPDATE", "LOAN:PAYMENT",
+                    "LOAN:READ", "LOAN:CREATE", "LOAN:UPDATE", "LOAN:PAYMENT", "LOAN:APPROVE",
                     "CLIENT:READ", "CLIENT:CREATE", "REPORT:VIEW"
             );
         }

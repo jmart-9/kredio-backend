@@ -25,12 +25,11 @@ public class TenantService {
 
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository; // ✅ AGREGADO
+    private final RoleRepository roleRepository;
     private final DataSource dataSource;
     private final JdbcTemplate jdbcTemplate;
     private final PasswordEncoder passwordEncoder;
 
-    // ⚠️ IMPORTANTE: SIN @Transactional AQUÍ para evitar deadlocks con Flyway
     public Tenant createTenant(String name, String subdomain, String adminEmail, String adminPassword, String adminFullName) {
         if (tenantRepository.findBySubdomain(subdomain).isPresent()) {
             throw new RuntimeException("El subdominio ya está en uso");
@@ -91,15 +90,14 @@ public class TenantService {
     // ✅ MÉTODO CORREGIDO: Ahora asigna el roleId correctamente
     private void createAdminUser(UUID tenantId, String email, String password, String fullName) {
         try {
-            // 1. Buscar el rol ADMIN_TENANT GLOBAL en la base de datos
+            // ✅ CAMBIADO: Usar findFirstByNameAndIsGlobalTrue para evitar duplicados
             Role adminTenantRole = roleRepository.findFirstByNameAndIsGlobalTrue("ADMIN_TENANT")
-                    .orElseThrow(() -> new RuntimeException("Rol ADMIN_TENANT global no encontrado en la base de datos"));
+                    .orElseThrow(() -> new RuntimeException("Rol ADMIN_TENANT global no encontrado"));
 
-            // 2. Crear el usuario asignando el roleId
             User adminUser = User.builder()
                     .tenantId(tenantId)
                     .role("ADMIN_TENANT")
-                    .roleId(adminTenantRole.getId()) // ✅ Asigna el ID del rol global
+                    .roleId(adminTenantRole.getId())
                     .fullName(fullName)
                     .email(email)
                     .passwordHash(passwordEncoder.encode(password))

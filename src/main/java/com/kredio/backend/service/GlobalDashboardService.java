@@ -79,11 +79,17 @@ public class GlobalDashboardService {
         BigDecimal total = BigDecimal.ZERO;
         for (Tenant tenant : tenants) {
             try {
+                // ✅ CAMBIADO: Usar CAST para manejar el tipo enum correctamente
                 BigDecimal portfolioValue = jdbcTemplate.queryForObject(
-                        String.format("SELECT COALESCE(SUM(current_balance), 0) FROM %s.loans WHERE status = 'ACTIVE'", tenant.getSchemaName()),
+                        String.format(
+                                "SELECT COALESCE(SUM(current_balance), 0) FROM %s.loans WHERE status::text = 'ACTIVE'",
+                                tenant.getSchemaName()
+                        ),
                         BigDecimal.class
                 );
-                if (portfolioValue != null) total = total.add(portfolioValue);
+                if (portfolioValue != null) {
+                    total = total.add(portfolioValue);
+                }
             } catch (Exception e) {
                 log.warn("No se pudo calcular portfolio para tenant {}: {}", tenant.getName(), e.getMessage());
             }

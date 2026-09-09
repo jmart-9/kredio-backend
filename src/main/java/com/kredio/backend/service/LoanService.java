@@ -11,6 +11,7 @@ import com.kredio.backend.repository.LoanRepository;
 import com.kredio.backend.repository.LoanScheduleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class LoanService {
 
     private final LoanRepository loanRepository;
@@ -38,6 +40,7 @@ public class LoanService {
             throw new RuntimeException("El cliente no pertenece a esta financiera");
         }
 
+        // ✅ CAMBIO: Crear préstamo en estado PENDING con approvalStatus PENDING
         Loan loan = Loan.builder()
                 .tenantId(tenantId)
                 .clientId(request.clientId())
@@ -50,11 +53,13 @@ public class LoanService {
                 .openingDate(request.openingDate())
                 .termMonths(request.term())
                 .currentBalance(request.principalAmount())
-                .status(Loan.LoanStatus.ACTIVE)
+                .status(Loan.LoanStatus.PENDING)  // ✅ CAMBIADO de ACTIVE a PENDING
+                .approvalStatus(Loan.ApprovalStatus.PENDING)  // ✅ AGREGADO
                 .build();
 
         loan = loanRepository.save(loan);
 
+        // Generar calendario de pagos (igual que antes)
         List<LoanSchedule> schedules;
         if ("SIMPLE".equals(request.amortizationMethod())) {
             schedules = calculateSimpleAmortization(
@@ -71,6 +76,8 @@ public class LoanService {
         }
 
         scheduleRepository.saveAll(schedules);
+
+        log.info("✅ Préstamo creado en estado PENDING: {}", loan.getId());
         return loan;
     }
 
