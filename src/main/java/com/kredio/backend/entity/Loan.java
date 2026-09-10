@@ -63,12 +63,18 @@ public class Loan {
     @Column(name = "interest_rate_id")
     private UUID interestRateId;
 
+    // ✅ AGREGADO: @Builder.Default
+    @Builder.Default
     @Column(name = "rate_type")
     private String rateType = "ANNUAL";
 
+    // ✅ AGREGADO: @Builder.Default
+    @Builder.Default
     @Column(name = "payment_frequency")
     private String paymentFrequency = "MONTHLY";
 
+    // ✅ AGREGADO: @Builder.Default
+    @Builder.Default
     @Column(name = "amortization_method")
     private String amortizationMethod = "FRENCH";
 

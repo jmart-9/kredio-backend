@@ -8,6 +8,7 @@ import com.kredio.backend.service.LoanQueryService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,7 +23,9 @@ public class LoanQueryController {
     private final LoanQueryService loanQueryService;
     private final LoanScheduleRepository scheduleRepository;
 
+    // ✅ AGREGADO: @PreAuthorize para proteger esta ruta
     @GetMapping
+    @PreAuthorize("hasAuthority('LOAN:READ')")
     public ResponseEntity<List<LoanResponse>> getAllLoans(
             HttpServletRequest httpRequest,
             @RequestParam(required = false) String status,
@@ -40,7 +43,6 @@ public class LoanQueryController {
             loans = loanQueryService.findAllByTenant(tenantId);
         }
 
-        // Filtrar por búsqueda de nombre de cliente
         if (search != null && !search.isEmpty()) {
             loans = loans.stream()
                     .filter(loan -> loan.clientName().toLowerCase().contains(search.toLowerCase()))
@@ -51,6 +53,7 @@ public class LoanQueryController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('LOAN:READ')")
     public ResponseEntity<Loan> getLoanById(
             @PathVariable UUID id,
             HttpServletRequest httpRequest) {
@@ -61,6 +64,7 @@ public class LoanQueryController {
     }
 
     @GetMapping("/{id}/schedules")
+    @PreAuthorize("hasAuthority('LOAN:READ')")
     public ResponseEntity<List<LoanSchedule>> getLoanSchedules(
             @PathVariable UUID id,
             HttpServletRequest httpRequest) {
