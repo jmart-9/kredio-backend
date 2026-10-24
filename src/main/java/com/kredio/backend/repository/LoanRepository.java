@@ -32,6 +32,10 @@ public interface LoanRepository extends JpaRepository<Loan, UUID> {
     @Query("SELECT l FROM Loan l WHERE l.tenantId = :tenantId AND l.clientId = :clientId ORDER BY l.createdAt DESC")
     List<Loan> findByTenantIdAndClientId(@Param("tenantId") UUID tenantId, @Param("clientId") UUID clientId);
 
+    @Query("SELECT l FROM Loan l WHERE l.tenantId = :tenantId AND l.approvalStatus = :approvalStatus ORDER BY l.createdAt DESC")
+    List<Loan> findByTenantIdAndApprovalStatus(@Param("tenantId") UUID tenantId, @Param("approvalStatus") Loan.ApprovalStatus approvalStatus);
+
+
     @Query("""
         SELECT DISTINCT l FROM Loan l 
         JOIN LoanSchedule ls ON ls.loanId = l.id

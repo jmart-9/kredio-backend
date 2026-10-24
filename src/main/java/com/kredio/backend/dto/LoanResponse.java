@@ -15,6 +15,12 @@ public record LoanResponse(
         String status,
         BigDecimal currentBalance,
         LocalDate openingDate,
-        Instant createdAt
+        Instant createdAt,
+
+        // ✅ Nuevos campos para que el frontend pueda mostrarlos o usarlos
+        String dayCountConvention,
+        String earlyRepaymentPolicy,
+        Integer graceDays,
+        Boolean adjustForBusinessDays
 ) {
 }

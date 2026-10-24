@@ -10,10 +10,9 @@ public record PaymentResponse(
         UUID collectorId,
         BigDecimal amountPaid,
         BigDecimal previousBalance,
-        BigDecimal newBalance,
+        BigDecimal currentBalance,
         Instant paymentDate,
         String method,
         Boolean isPrinted,
         Boolean syncedFromOffline
-) {
-}
+) {}

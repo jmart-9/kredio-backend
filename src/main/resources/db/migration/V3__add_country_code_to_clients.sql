@@ -1,1 +1,1 @@
-ALTER TABLE clients ADD COLUMN country_code VARCHAR(10);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS country_code VARCHAR(10);

@@ -17,6 +17,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     // Busca todos los usuarios de un tenant específico
     List<User> findByTenantId(UUID tenantId);
 
+    List<User> findAllByEmail(String email);
+
     // Verifica si un correo ya está registrado
     boolean existsByEmail(String email);
 

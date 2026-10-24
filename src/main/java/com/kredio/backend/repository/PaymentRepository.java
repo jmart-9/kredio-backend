@@ -29,6 +29,9 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
     @Query("SELECT p FROM Payment p WHERE p.loanId = :loanId")
     List<Payment> findByLoanId(@Param("loanId") UUID loanId);
 
+    // ✅ NUEVO: Método para obtener pagos por loanId ordenados por fecha
+    List<Payment> findByLoanIdOrderByPaymentDateDesc(UUID loanId);
+
     @Query("""
         SELECT p.collectorId, 
                 COUNT(p), 

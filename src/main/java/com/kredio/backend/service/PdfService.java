@@ -6,15 +6,23 @@ import com.kredio.backend.entity.LoanSchedule;
 import com.kredio.backend.entity.Payment;
 import com.kredio.backend.repository.ClientRepository;
 import com.kredio.backend.repository.LoanRepository;
+import com.kredio.backend.repository.LoanScheduleRepository;
 import com.kredio.backend.repository.PaymentRepository;
-import com.lowagie.text.*;
-import com.lowagie.text.Font;
+import com.lowagie.text.Document;
+import com.lowagie.text.DocumentException;
+import com.lowagie.text.Element;
+import com.lowagie.text.FontFactory;
+import com.lowagie.text.PageSize;
+import com.lowagie.text.Paragraph;
+import com.lowagie.text.Phrase;
 import com.lowagie.text.Rectangle;
-import com.lowagie.text.pdf.*;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfWriter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.awt.*;
+import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,6 +41,7 @@ public class PdfService {
     private final LoanRepository loanRepository;
     private final ClientRepository clientRepository;
     private final PaymentRepository paymentRepository;
+    private final LoanScheduleRepository loanScheduleRepository; // ✅ AGREGADO
 
     private static final Color PRIMARY_COLOR = new Color(79, 70, 229);
     private static final Color HEADER_BG = new Color(243, 244, 246);
@@ -45,23 +54,21 @@ public class PdfService {
     public byte[] generateLoanPdf(UUID loanId) throws Exception {
         Loan loan = loanRepository.findById(loanId)
                 .orElseThrow(() -> new RuntimeException("Préstamo no encontrado"));
-
         Client client = clientRepository.findById(loan.getClientId())
                 .orElseThrow(() -> new RuntimeException("Cliente no encontrado"));
-
         List<LoanSchedule> schedules = getLoanSchedules(loanId);
 
         Document document = new Document(PageSize.LETTER.rotate());
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PdfWriter.getInstance(document, outputStream);
-
         document.open();
+
         addHeader(document, "CONTRATO DE PRÉSTAMO");
         addLoanDetails(document, loan, client);
         addPaymentSchedule(document, schedules);
         addSignatures(document, client.getFullName());
-        document.close();
 
+        document.close();
         return outputStream.toByteArray();
     }
 
@@ -71,23 +78,21 @@ public class PdfService {
     public byte[] generatePaymentReceiptPdf(UUID paymentId) throws Exception {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new RuntimeException("Pago no encontrado"));
-
         Loan loan = loanRepository.findById(payment.getLoanId())
                 .orElseThrow(() -> new RuntimeException("Préstamo no encontrado"));
-
         Client client = clientRepository.findById(loan.getClientId())
                 .orElseThrow(() -> new RuntimeException("Cliente no encontrado"));
 
         Document document = new Document(PageSize.LETTER);
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PdfWriter.getInstance(document, outputStream);
-
         document.open();
+
         addReceiptHeader(document);
         addPaymentDetails(document, payment, loan, client);
         addFooter(document);
-        document.close();
 
+        document.close();
         return outputStream.toByteArray();
     }
 
@@ -99,24 +104,25 @@ public class PdfService {
         Document document = new Document(PageSize.LETTER);
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         PdfWriter.getInstance(document, outputStream);
-
         document.open();
+
         addHeader(document, "REPORTE DE CARTERA EN RIESGO (PAR)");
         addParDetails(document, tenantId, par30, par60, par90, totalPortfolio);
-        document.close();
 
+        document.close();
         return outputStream.toByteArray();
     }
 
-    // Métodos privados de ayuda
+    // ==================== MÉTODOS PRIVADOS ====================
+
     private void addHeader(Document document, String title) throws DocumentException {
-        Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 24, PRIMARY_COLOR);
+        com.lowagie.text.Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 24, PRIMARY_COLOR);
         Paragraph titleParagraph = new Paragraph(title, titleFont);
         titleParagraph.setAlignment(Element.ALIGN_CENTER);
         titleParagraph.setSpacingAfter(20);
         document.add(titleParagraph);
 
-        Font infoFont = FontFactory.getFont(FontFactory.HELVETICA, 10);
+        com.lowagie.text.Font infoFont = FontFactory.getFont(FontFactory.HELVETICA, 10);
         Paragraph info = new Paragraph("Generado: " + java.time.LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")), infoFont);
         info.setAlignment(Element.ALIGN_RIGHT);
@@ -145,7 +151,7 @@ public class PdfService {
     }
 
     private void addPaymentSchedule(Document document, List<LoanSchedule> schedules) throws DocumentException {
-        Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, PRIMARY_COLOR);
+        com.lowagie.text.Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, PRIMARY_COLOR);
         Paragraph section = new Paragraph("CALENDARIO DE PAGOS", sectionFont);
         section.setSpacingBefore(20);
         section.setSpacingAfter(10);
@@ -164,23 +170,14 @@ public class PdfService {
             table.addCell(cell);
         }
 
-        // Datos reales con los campos correctos de LoanSchedule
+        // Datos
         for (LoanSchedule schedule : schedules) {
             table.addCell(String.valueOf(schedule.getInstallmentNumber()));
-
-            // dueDate es LocalDate
             table.addCell(schedule.getDueDate().format(dateFormatter));
-
             table.addCell(formatCurrency(schedule.getExpectedAmount()));
             table.addCell(formatCurrency(schedule.getExpectedPrincipal()));
             table.addCell(formatCurrency(schedule.getExpectedInterest()));
-
-            // LoanSchedule no tiene remainingBalance, calculamos uno aproximado
-            // O puedes poner "N/A" si prefieres
             table.addCell(formatCurrency(schedule.getExpectedAmount())); // Placeholder
-
-            // Si quieres calcular el saldo restante, necesitarías la lógica completa
-            // Por ahora ponemos el monto esperado como referencia
         }
 
         document.add(table);
@@ -188,8 +185,7 @@ public class PdfService {
 
     private void addSignatures(Document document, String clientName) throws DocumentException {
         document.newPage();
-
-        Font signatureFont = FontFactory.getFont(FontFactory.HELVETICA, 12);
+        com.lowagie.text.Font signatureFont = FontFactory.getFont(FontFactory.HELVETICA, 12);
         Paragraph signatureLabel = new Paragraph("FIRMAS DE CONFORMIDAD", signatureFont);
         signatureLabel.setAlignment(Element.ALIGN_CENTER);
         signatureLabel.setSpacingAfter(40);
@@ -216,12 +212,11 @@ public class PdfService {
 
         signatures.addCell(clientCell);
         signatures.addCell(lenderCell);
-
         document.add(signatures);
     }
 
     private void addReceiptHeader(Document document) throws DocumentException {
-        Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20, PRIMARY_COLOR);
+        com.lowagie.text.Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20, PRIMARY_COLOR);
         Paragraph title = new Paragraph("COMPROBANTE DE PAGO", titleFont);
         title.setAlignment(Element.ALIGN_CENTER);
         title.setSpacingAfter(30);
@@ -239,8 +234,6 @@ public class PdfService {
         addTableRow(table, "Préstamo:", loan.getId().toString());
         addTableRow(table, "Monto Pagado:", formatCurrency(payment.getAmountPaid()));
         addTableRow(table, "Método de Pago:", payment.getMethod().toString());
-
-        // Estos campos pueden no existir en Payment - los pongo en 0 por ahora
         addTableRow(table, "Saldo Anterior:", "$0.00");
         addTableRow(table, "Nuevo Saldo:", formatCurrency(loan.getCurrentBalance()));
 
@@ -252,7 +245,7 @@ public class PdfService {
     }
 
     private void addFooter(Document document) throws DocumentException {
-        Font footerFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 9, Color.GRAY);
+        com.lowagie.text.Font footerFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 9, Color.GRAY);
         Paragraph footer = new Paragraph("Este comprobante es un documento válido. Consérvelo para sus registros.", footerFont);
         footer.setAlignment(Element.ALIGN_CENTER);
         footer.setSpacingBefore(40);
@@ -261,7 +254,7 @@ public class PdfService {
 
     private void addParDetails(Document document, UUID tenantId, BigDecimal par30, BigDecimal par60,
                                BigDecimal par90, BigDecimal totalPortfolio) throws DocumentException {
-        Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, PRIMARY_COLOR);
+        com.lowagie.text.Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, PRIMARY_COLOR);
         Paragraph section = new Paragraph("RESUMEN DE CARTERA EN RIESGO", sectionFont);
         section.setSpacingBefore(20);
         section.setSpacingAfter(10);
@@ -272,7 +265,6 @@ public class PdfService {
         table.setWidths(new int[]{3, 2, 2, 2});
         table.setSpacingBefore(10);
 
-        // Headers
         String[] headers = {"Concepto", "Monto", "% del Total", "Descripción"};
         for (String header : headers) {
             PdfPCell cell = new PdfPCell(new Phrase(header, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
@@ -281,25 +273,21 @@ public class PdfService {
             table.addCell(cell);
         }
 
-        // Total Portfolio
         table.addCell("Cartera Total");
         table.addCell(formatCurrency(totalPortfolio));
         table.addCell("100%");
         table.addCell("Saldo total de préstamos activos");
 
-        // PAR 30
         table.addCell("PAR 30 días");
         table.addCell(formatCurrency(par30));
         table.addCell(calculatePercentage(par30, totalPortfolio) + "%");
         table.addCell("Cartera vencida > 30 días");
 
-        // PAR 60
         table.addCell("PAR 60 días");
         table.addCell(formatCurrency(par60));
         table.addCell(calculatePercentage(par60, totalPortfolio) + "%");
         table.addCell("Cartera vencida > 60 días");
 
-        // PAR 90
         table.addCell("PAR 90 días");
         table.addCell(formatCurrency(par90));
         table.addCell(calculatePercentage(par90, totalPortfolio) + "%");
@@ -308,16 +296,15 @@ public class PdfService {
         document.add(table);
     }
 
-    // Métodos utilitarios
+    // ==================== UTILS ====================
+
     private void addTableRow(PdfPTable table, String label, String value) {
         PdfPCell labelCell = new PdfPCell(new Phrase(label, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
         labelCell.setBorder(Rectangle.NO_BORDER);
         labelCell.setPadding(5);
-
         PdfPCell valueCell = new PdfPCell(new Phrase(value, FontFactory.getFont(FontFactory.HELVETICA, 10)));
         valueCell.setBorder(Rectangle.NO_BORDER);
         valueCell.setPadding(5);
-
         table.addCell(labelCell);
         table.addCell(valueCell);
     }
@@ -327,41 +314,35 @@ public class PdfService {
     }
 
     private String formatInstant(Instant instant) {
-        if (instant == null) {
-            return "N/A";
-        }
+        if (instant == null) return "N/A";
         return instant.atZone(ZoneId.systemDefault())
                 .toLocalDateTime()
                 .format(dateFormatter);
     }
 
     private String calculatePercentage(BigDecimal amount, BigDecimal total) {
-        if (total.compareTo(BigDecimal.ZERO) == 0) {
-            return "0.00";
-        }
+        if (total.compareTo(BigDecimal.ZERO) == 0) return "0.00";
         return amount.multiply(BigDecimal.valueOf(100))
                 .divide(total, 2, RoundingMode.HALF_UP)
                 .toString();
     }
 
     private BigDecimal calculateMonthlyPayment(Loan loan) {
-        // Fórmula de amortización francesa
         double monthlyRate = loan.getInterestRate().doubleValue() / 100 / 12;
         int months = loan.getTermMonths();
         double principal = loan.getPrincipalAmount().doubleValue();
-
         if (monthlyRate == 0) {
             return BigDecimal.valueOf(principal / months);
         }
-
         double payment = principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) /
                 (Math.pow(1 + monthlyRate, months) - 1);
-
         return BigDecimal.valueOf(payment).setScale(2, RoundingMode.HALF_UP);
     }
 
+    /**
+     * ✅ MÉTODO CORREGIDO - Ya no retorna lista vacía
+     */
     private List<LoanSchedule> getLoanSchedules(UUID loanId) {
-        // TODO: Implementar cuando tengas el LoanScheduleRepository inyectado
-        return List.of();
+        return loanScheduleRepository.findByLoanIdOrderByInstallmentNumberAsc(loanId);
     }
 }

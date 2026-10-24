@@ -3,35 +3,42 @@ package com.kredio.backend.service;
 import com.kredio.backend.dto.LoanRequest;
 import com.kredio.backend.dto.LoanResponse;
 import com.kredio.backend.dto.LoanScheduleResponse;
+import com.kredio.backend.engine.*;
+import com.kredio.backend.engine.amortization.AmortizationFactory;
 import com.kredio.backend.entity.Client;
 import com.kredio.backend.entity.Loan;
 import com.kredio.backend.entity.LoanSchedule;
+import com.kredio.backend.entity.Payment;
 import com.kredio.backend.repository.ClientRepository;
 import com.kredio.backend.repository.LoanRepository;
 import com.kredio.backend.repository.LoanScheduleRepository;
+import com.kredio.backend.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class LoanService {
 
     private final LoanRepository loanRepository;
     private final LoanScheduleRepository scheduleRepository;
     private final ClientRepository clientRepository;
+    private final PaymentRepository paymentRepository; // ✅ Corregido a minúscula (convención Java)
+    private final AmortizationFactory amortizationFactory;
 
     @Transactional
     public Loan createLoan(LoanRequest request, UUID tenantId) {
-        // 1. Validar que el cliente exista y pertenezca al tenant
+        log.info(" Creando préstamo para cliente: {}, monto: {}", request.clientId(), request.principalAmount());
+
+        // 1. Validar que el cliente existe
         Client client = clientRepository.findById(request.clientId())
                 .orElseThrow(() -> new RuntimeException("Cliente no encontrado"));
 
@@ -39,237 +46,134 @@ public class LoanService {
             throw new RuntimeException("El cliente no pertenece a esta financiera");
         }
 
-        // 2. Crear el préstamo
+        // 2. Parsear enums con valores por defecto
+        AmortizationMethod method = AmortizationMethod.valueOf(request.amortizationMethod().toUpperCase());
+        PaymentFrequency frequency = PaymentFrequency.valueOf(request.paymentFrequency().toUpperCase());
+        RateType rateType = RateType.valueOf(request.rateType().toUpperCase());
+        DayCountConvention dayCount = request.dayCountConvention() != null
+                ? DayCountConvention.valueOf(request.dayCountConvention().toUpperCase())
+                : DayCountConvention.ACTUAL_360;
+        EarlyRepaymentPolicy policy = request.earlyRepaymentPolicy() != null
+                ? EarlyRepaymentPolicy.valueOf(request.earlyRepaymentPolicy().toUpperCase())
+                : EarlyRepaymentPolicy.WITH_CONDONATION;
+
+        // 3. Calcular comisión si aplica
+        BigDecimal principal = request.principalAmount();
+        BigDecimal commission = request.administrativeFee() != null ? request.administrativeFee() : BigDecimal.ZERO;
+        BigDecimal netPrincipal = principal;
+
+        if (commission.compareTo(BigDecimal.ZERO) > 0 && "DEDUCTED".equals(request.feeCollectionMode())) {
+            netPrincipal = principal.subtract(commission);
+        }
+
+        // 4. Crear la entidad Loan
         Loan loan = Loan.builder()
                 .tenantId(tenantId)
                 .clientId(request.clientId())
-                .portfolioId(client.getPortfolioId())
-                .principalAmount(request.principalAmount())
+                .portfolioId(request.portfolioId() != null ? request.portfolioId() : client.getPortfolioId())
+                .principalAmount(netPrincipal)
                 .interestRate(request.interestRate())
-                .rateType(request.rateType())
-                .paymentFrequency(request.paymentFrequency())
-                .amortizationMethod(request.amortizationMethod())
+                .rateType(rateType)
+                .paymentFrequency(frequency)
+                .amortizationMethod(method)
+                .termMonths(request.term())  // ✅ CORREGIDO: usar termMonths
                 .openingDate(request.openingDate())
-                .termMonths(request.term())
-                .currentBalance(request.principalAmount())
-                .status(Loan.LoanStatus.ACTIVE)
+                // ✅ ELIMINADO: firstPaymentDate (no existe en la entidad)
+                .dayCountConvention(dayCount)
+                .earlyRepaymentPolicy(policy)
+                .graceDays(request.graceDays() != null ? request.graceDays() : 0)
+                .adjustForBusinessDays(request.adjustForBusinessDays() != null ? request.adjustForBusinessDays() : false)
+                // ✅ NUEVOS CAMPOS
+                .disbursementMethod(request.disbursementMethod() != null
+                        ? Loan.DisbursementMethod.valueOf(request.disbursementMethod())
+                        : Loan.DisbursementMethod.CASH)
+                .administrativeFee(commission)
+                .feeCollectionMode(request.feeCollectionMode() != null
+                        ? Loan.FeeCollectionMode.valueOf(request.feeCollectionMode())
+                        : Loan.FeeCollectionMode.DEDUCTED)
+                .moratoryType(request.moratoryType() != null
+                        ? Loan.MoratoryType.valueOf(request.moratoryType())
+                        : Loan.MoratoryType.PERCENTAGE)
+                .moratoryValue(request.moratoryValue() != null ? request.moratoryValue() : BigDecimal.ZERO)
+                .status(Loan.LoanStatus.PENDING)
+                .approvalStatus(Loan.ApprovalStatus.PENDING)
+                .currentBalance(netPrincipal)
                 .build();
 
         loan = loanRepository.save(loan);
+        log.info("✅ Préstamo creado en estado PENDING con ID: {}", loan.getId());
 
-        // 3. Generar la tabla de amortización según el método
-        List<LoanSchedule> schedules;
-        if ("SIMPLE".equals(request.amortizationMethod())) {
-            schedules = calculateSimpleAmortization(
-                    request.principalAmount(),
-                    request.interestRate(),
-                    request.rateType(),
-                    request.paymentFrequency(),
-                    request.term(),
-                    request.firstPaymentDate(),
-                    loan.getId(),
-                    tenantId
-            );
-        } else {
-            schedules = calculateFrenchAmortization(
-                    request.principalAmount(),
-                    request.interestRate(),
-                    request.rateType(),
-                    request.paymentFrequency(),
-                    request.term(),
-                    request.firstPaymentDate(),
-                    loan.getId(),
-                    tenantId
-            );
+        // 5. Generar calendario de pagos
+        try {
+            AmortizationRequest amortizationRequest = AmortizationRequest.builder()
+                    .principalAmount(netPrincipal)
+                    .annualInterestRate(request.interestRate())
+                    .termMonths(request.term())
+                    .amortizationMethod(method)
+                    .paymentFrequency(frequency)
+                    .rateType(rateType)
+                    .dayCountConvention(dayCount)
+                    .startDate(request.openingDate())  // ✅ Usar openingDate como startDate
+                    .graceDays(request.graceDays() != null ? request.graceDays() : 0)
+                    .adjustForBusinessDays(request.adjustForBusinessDays() != null ? request.adjustForBusinessDays() : false)
+                    .earlyRepaymentPolicy(policy)
+                    .build();
+
+            AmortizationEngine engine = amortizationFactory.getEngine(method);
+            List<AmortizationScheduleDTO> scheduleDTOs = engine.generateSchedule(amortizationRequest);
+
+            // 6. Guardar cuotas en la base de datos
+            for (AmortizationScheduleDTO dto : scheduleDTOs) {
+                LoanSchedule schedule = LoanSchedule.builder()
+                        .loanId(loan.getId())
+                        .tenantId(tenantId)
+                        .installmentNumber(dto.getInstallmentNumber())
+                        .dueDate(dto.getDueDate())
+                        .expectedAmount(dto.getInstallmentAmount())
+                        .expectedPrincipal(dto.getPrincipalAmount())
+                        .expectedInterest(dto.getInterestAmount())
+                        .status(LoanSchedule.ScheduleStatus.PENDING)
+                        .build();
+                scheduleRepository.save(schedule);  // ✅ CORREGIDO: usar scheduleRepository
+            }
+
+            log.info("✅ Calendario generado: {} cuotas", scheduleDTOs.size());
+        } catch (Exception e) {
+            log.error("❌ Error al generar calendario: {}", e.getMessage(), e);
+            throw new RuntimeException("Error al generar el calendario de pagos: " + e.getMessage());
         }
-
-        // 4. Guardar todas las cuotas
-        scheduleRepository.saveAll(schedules);
 
         return loan;
     }
 
-    /**
-     * SISTEMA FRANCÉS: Cuota fija, interés sobre saldo insoluto
-     */
-    private List<LoanSchedule> calculateFrenchAmortization(
-            BigDecimal principal,
-            BigDecimal interestRate,
-            String rateType,
-            String paymentFrequency,
-            int term,
-            LocalDate firstPaymentDate,
-            UUID loanId,
-            UUID tenantId) {
+    @Transactional
+    public void deleteLoan(UUID loanId, UUID tenantId) {
+        Loan loan = loanRepository.findById(loanId)
+                .orElseThrow(() -> new RuntimeException("Préstamo no encontrado"));
 
-        List<LoanSchedule> schedules = new ArrayList<>();
-        BigDecimal remainingBalance = principal;
-
-        BigDecimal periodRate = calculatePeriodRate(interestRate, rateType, paymentFrequency);
-        int totalPayments = term;
-
-        // Calcular la cuota fija (PMT)
-        BigDecimal payment;
-        if (periodRate.compareTo(BigDecimal.ZERO) == 0) {
-            payment = principal.divide(BigDecimal.valueOf(totalPayments), 4, RoundingMode.HALF_UP);
-        } else {
-            BigDecimal onePlusRate = BigDecimal.ONE.add(periodRate);
-            BigDecimal numerator = periodRate.multiply(onePlusRate.pow(totalPayments));
-            BigDecimal denominator = onePlusRate.pow(totalPayments).subtract(BigDecimal.ONE);
-            payment = principal.multiply(numerator).divide(denominator, 4, RoundingMode.HALF_UP);
+        if (!loan.getTenantId().equals(tenantId)) {
+            throw new RuntimeException("El préstamo no pertenece a esta financiera");
         }
 
-        LocalDate currentDate = firstPaymentDate;
+        List<LoanSchedule> schedules = scheduleRepository.findByLoanId(loanId);
+        scheduleRepository.deleteAll(schedules);
 
-        for (int i = 1; i <= totalPayments; i++) {
-            BigDecimal interest = remainingBalance.multiply(periodRate).setScale(4, RoundingMode.HALF_UP);
-            BigDecimal principalPayment = payment.subtract(interest).setScale(4, RoundingMode.HALF_UP);
+        List<Payment> payments = paymentRepository.findByLoanId(loanId);
+        paymentRepository.deleteAll(payments);
 
-            // Ajuste para la última cuota
-            if (i == totalPayments) {
-                principalPayment = remainingBalance;
-                payment = principalPayment.add(interest);
-            }
+        loanRepository.delete(loan);
 
-            remainingBalance = remainingBalance.subtract(principalPayment).setScale(4, RoundingMode.HALF_UP);
-
-            LoanSchedule schedule = LoanSchedule.builder()
-                    .tenantId(tenantId)
-                    .loanId(loanId)
-                    .installmentNumber(i)
-                    .dueDate(currentDate)
-                    .expectedAmount(payment)
-                    .expectedPrincipal(principalPayment)
-                    .expectedInterest(interest)
-                    .status(LoanSchedule.ScheduleStatus.PENDING)
-                    .build();
-
-            schedules.add(schedule);
-
-            currentDate = calculateNextDueDate(currentDate, paymentFrequency);
-        }
-
-        return schedules;
-    }
-
-    /**
-     * INTERÉS SIMPLE (FLAT): Interés fijo sobre monto inicial
-     */
-    private List<LoanSchedule> calculateSimpleAmortization(
-            BigDecimal principal,
-            BigDecimal interestRate,
-            String rateType,
-            String paymentFrequency,
-            int term,
-            LocalDate firstPaymentDate,
-            UUID loanId,
-            UUID tenantId) {
-
-        List<LoanSchedule> schedules = new ArrayList<>();
-
-        BigDecimal periodRate = calculatePeriodRate(interestRate, rateType, paymentFrequency);
-        int totalPayments = term;
-
-        // Interés fijo por período (siempre sobre el monto original)
-        BigDecimal fixedInterest = principal.multiply(periodRate).setScale(4, RoundingMode.HALF_UP);
-
-        // Capital fijo por período
-        BigDecimal fixedPrincipal = principal.divide(BigDecimal.valueOf(totalPayments), 4, RoundingMode.HALF_UP);
-
-        // Cuota fija = Capital + Interés
-        BigDecimal payment = fixedPrincipal.add(fixedInterest).setScale(4, RoundingMode.HALF_UP);
-
-        LocalDate currentDate = firstPaymentDate;
-        BigDecimal remainingBalance = principal;
-
-        for (int i = 1; i <= totalPayments; i++) {
-            BigDecimal interest = fixedInterest;
-            BigDecimal principalPayment = fixedPrincipal;
-
-            // Ajuste para la última cuota
-            if (i == totalPayments) {
-                principalPayment = remainingBalance;
-                payment = principalPayment.add(interest);
-            }
-
-            remainingBalance = remainingBalance.subtract(principalPayment).setScale(4, RoundingMode.HALF_UP);
-
-            LoanSchedule schedule = LoanSchedule.builder()
-                    .tenantId(tenantId)
-                    .loanId(loanId)
-                    .installmentNumber(i)
-                    .dueDate(currentDate)
-                    .expectedAmount(payment)
-                    .expectedPrincipal(principalPayment)
-                    .expectedInterest(interest)
-                    .status(LoanSchedule.ScheduleStatus.PENDING)
-                    .build();
-
-            schedules.add(schedule);
-
-            currentDate = calculateNextDueDate(currentDate, paymentFrequency);
-        }
-
-        return schedules;
-    }
-
-    /**
-     * Calcula la tasa del período según la frecuencia de pago
-     */
-    private BigDecimal calculatePeriodRate(BigDecimal interestRate, String rateType, String paymentFrequency) {
-        BigDecimal rateDecimal = interestRate.divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
-        BigDecimal monthlyRate;
-
-        if ("MONTHLY".equals(rateType)) {
-            monthlyRate = rateDecimal;
-        } else {
-            monthlyRate = rateDecimal.divide(BigDecimal.valueOf(12), 10, RoundingMode.HALF_UP);
-        }
-
-        return switch (paymentFrequency) {
-            case "DAILY" -> monthlyRate.divide(BigDecimal.valueOf(30), 10, RoundingMode.HALF_UP);
-            case "WEEKLY" -> monthlyRate.divide(BigDecimal.valueOf(4.33), 10, RoundingMode.HALF_UP);
-            case "BIWEEKLY" -> monthlyRate.divide(BigDecimal.valueOf(2), 10, RoundingMode.HALF_UP);
-            case "MONTHLY" -> monthlyRate;
-            case "QUARTERLY" -> monthlyRate.multiply(BigDecimal.valueOf(3));
-            case "SEMIANNUAL" -> monthlyRate.multiply(BigDecimal.valueOf(6));
-            case "ANNUAL" -> monthlyRate.multiply(BigDecimal.valueOf(12));
-            default -> monthlyRate;
-        };
-    }
-
-    /**
-     * Calcula la siguiente fecha de vencimiento según la frecuencia
-     */
-    private LocalDate calculateNextDueDate(LocalDate currentDate, String paymentFrequency) {
-        return switch (paymentFrequency) {
-            case "DAILY" -> currentDate.plusDays(1);
-            case "WEEKLY" -> currentDate.plusWeeks(1);
-            case "BIWEEKLY" -> currentDate.plusWeeks(2);
-            case "MONTHLY" -> currentDate.plusMonths(1);
-            case "QUARTERLY" -> currentDate.plusMonths(3);
-            case "SEMIANNUAL" -> currentDate.plusMonths(6);
-            case "ANNUAL" -> currentDate.plusYears(1);
-            default -> currentDate.plusMonths(1);
-        };
+        log.info("✅ Préstamo {} y toda su información relacionada eliminada", loanId);
     }
 
     public List<LoanResponse> getAllLoans(UUID tenantId, String status, String search) {
-        List<Loan> loans;
+        List<Loan> loans = (status != null && !status.isEmpty())
+                ? loanRepository.findByTenantIdAndStatus(tenantId, Loan.LoanStatus.valueOf(status.toUpperCase()))
+                : loanRepository.findByTenantId(tenantId);
 
-        if (status != null && !status.isEmpty()) {
-            Loan.LoanStatus loanStatus = Loan.LoanStatus.valueOf(status.toUpperCase());
-            loans = loanRepository.findByTenantIdAndStatus(tenantId, loanStatus);
-        } else {
-            loans = loanRepository.findByTenantId(tenantId);
-        }
-
-        return loans.stream()
-                .map(loan -> {
+        return loans.stream().map(loan -> {
                     String clientName = clientRepository.findById(loan.getClientId())
-                            .map(Client::getFullName)
-                            .orElse("Cliente no encontrado");
-
+                            .map(Client::getFullName).orElse("Cliente no encontrado");
                     return new LoanResponse(
                             loan.getId(),
                             loan.getClientId(),
@@ -280,23 +184,19 @@ public class LoanService {
                             loan.getStatus().name(),
                             loan.getCurrentBalance(),
                             loan.getOpeningDate(),
-                            loan.getCreatedAt()
+                            loan.getCreatedAt(),
+                            loan.getDayCountConvention() != null ? loan.getDayCountConvention().name() : "ACTUAL_360",
+                            loan.getEarlyRepaymentPolicy() != null ? loan.getEarlyRepaymentPolicy().name() : "WITH_CONDONATION",
+                            loan.getGraceDays() != null ? loan.getGraceDays() : 0,
+                            loan.getAdjustForBusinessDays() != null ? loan.getAdjustForBusinessDays() : false
                     );
-                })
-                .filter(loan -> {
-                    if (search == null || search.isEmpty()) return true;
-                    return loan.clientName().toLowerCase().contains(search.toLowerCase()); // ✅ Corregido: clientName() en lugar de getClientName()
-                })
+                }).filter(loan -> search == null || search.isEmpty() || loan.clientName().toLowerCase().contains(search.toLowerCase()))
                 .collect(Collectors.toList());
     }
 
     public List<LoanScheduleResponse> getLoanSchedule(UUID loanId, UUID tenantId) {
-        Loan loan = loanRepository.findById(loanId)
-                .orElseThrow(() -> new RuntimeException("Préstamo no encontrado"));
-
-        if (!loan.getTenantId().equals(tenantId)) {
-            throw new RuntimeException("Acceso denegado");
-        }
+        Loan loan = loanRepository.findById(loanId).orElseThrow(() -> new RuntimeException("Préstamo no encontrado"));
+        if (!loan.getTenantId().equals(tenantId)) throw new RuntimeException("Acceso denegado");
 
         return scheduleRepository.findByLoanIdOrderByInstallmentNumberAsc(loanId).stream()
                 .map(s -> LoanScheduleResponse.builder()
@@ -309,5 +209,59 @@ public class LoanService {
                         .status(s.getStatus().name())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    public List<AmortizationScheduleDTO> simulateLoan(LoanRequest request, UUID tenantId) {
+        // Validar campos requeridos
+        if (request.principalAmount() == null || request.principalAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("El monto principal es requerido");
+        }
+        if (request.interestRate() == null || request.interestRate().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("La tasa de interés es requerida");
+        }
+        if (request.term() == null || request.term() <= 0) {
+            throw new RuntimeException("El número de cuotas es requerido");
+        }
+
+        // Calcular comisión si aplica
+        BigDecimal principal = request.principalAmount();
+        BigDecimal commission = request.administrativeFee() != null ? request.administrativeFee() : BigDecimal.ZERO;
+
+        BigDecimal netPrincipal = principal;
+        if (commission.compareTo(BigDecimal.ZERO) > 0) {
+            if ("DEDUCTED".equals(request.feeCollectionMode())) {
+                netPrincipal = principal.subtract(commission);
+            }
+            // Si es FINANCED, se agrega a las cuotas (lógica adicional necesaria)
+        }
+
+        // Parsear enums
+        AmortizationMethod method = AmortizationMethod.valueOf(request.amortizationMethod());
+        PaymentFrequency frequency = PaymentFrequency.valueOf(request.paymentFrequency());
+        RateType rateType = RateType.valueOf(request.rateType());
+        DayCountConvention dayCount = DayCountConvention.valueOf(request.dayCountConvention());
+        EarlyRepaymentPolicy policy = request.earlyRepaymentPolicy() != null
+                ? EarlyRepaymentPolicy.valueOf(request.earlyRepaymentPolicy())
+                : EarlyRepaymentPolicy.WITH_CONDONATION;
+
+        // ✅ CORRECCIÓN 1: Usar Builder en lugar de constructor
+        AmortizationRequest amortizationRequest = AmortizationRequest.builder()
+                .principalAmount(netPrincipal)
+                .annualInterestRate(request.interestRate())
+                .termMonths(request.term())
+                .amortizationMethod(method)
+                .paymentFrequency(frequency)
+                .rateType(rateType)
+                .dayCountConvention(dayCount)
+                .startDate(request.openingDate())
+                .graceDays(request.graceDays() != null ? request.graceDays() : 0)
+                .adjustForBusinessDays(request.adjustForBusinessDays() != null ? request.adjustForBusinessDays() : false)
+                .earlyRepaymentPolicy(policy)
+                .build();
+
+        // ✅ CORRECCIÓN 2: Usar getEngine() en lugar de create()
+        AmortizationEngine engine = amortizationFactory.getEngine(method);
+
+        return engine.generateSchedule(amortizationRequest);
     }
 }

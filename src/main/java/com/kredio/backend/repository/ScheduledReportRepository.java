@@ -10,4 +10,5 @@ import java.util.UUID;
 @Repository
 public interface ScheduledReportRepository extends JpaRepository<ScheduledReport, UUID> {
     List<ScheduledReport> findByTenantIdAndIsActiveTrue(UUID tenantId);
+
 }

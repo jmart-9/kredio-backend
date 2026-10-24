@@ -37,16 +37,25 @@ public class InterestRateController {
 
     @PostMapping
     public ResponseEntity<InterestRate> createRate(
-            @RequestBody InterestRate rate,
-            @RequestBody Map<String, Boolean> body,
+            @RequestBody Map<String, Object> body,
             HttpServletRequest httpRequest) {
-
         UUID tenantId = (UUID) httpRequest.getAttribute("tenantId");
-        Boolean isGlobal = body.getOrDefault("isGlobal", false);
+
+        // Extraer datos del map
+        InterestRate rate = new InterestRate();
+        rate.setName((String) body.get("name"));
+        rate.setAnnualRate(new java.math.BigDecimal(body.get("annualRate").toString()));
+        rate.setDescription((String) body.get("description"));
+        rate.setIsActive((Boolean) body.getOrDefault("isActive", true));
+
+        Boolean isGlobal = Boolean.parseBoolean(body.getOrDefault("isGlobal", "false").toString());
 
         // Solo admin global puede crear tasas globales
         if (isGlobal) {
-            // Aquí deberías verificar que el usuario sea ADMIN_GLOBAL
+            String role = (String) httpRequest.getAttribute("role");
+            if (!"ADMIN_GLOBAL".equals(role)) {
+                throw new RuntimeException("Solo el administrador global puede crear tasas globales");
+            }
         }
 
         return ResponseEntity.ok(interestRateService.createRate(rate, tenantId, isGlobal));

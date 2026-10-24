@@ -12,8 +12,11 @@ public record LoanRequest(
         @NotNull(message = "El ID del cliente es obligatorio")
         UUID clientId,
 
-        @NotNull(message = "El monto del préstamo es obligatorio")
-        @DecimalMin(value = "0.01", message = "El monto debe ser mayor a cero")
+        // ✅ NUEVO: Portfolio/Cartera
+        UUID portfolioId,
+
+        @NotNull(message = "El monto principal es obligatorio")
+        @DecimalMin(value = "0.01", message = "El monto principal debe ser mayor a cero")
         BigDecimal principalAmount,
 
         @NotNull(message = "La tasa de interés es obligatoria")
@@ -21,22 +24,33 @@ public record LoanRequest(
         BigDecimal interestRate,
 
         @NotNull(message = "El tipo de tasa es obligatorio")
-        String rateType, // ANNUAL o MONTHLY
+        String rateType,
 
-        @NotNull(message = "La modalidad de pago es obligatoria")
-        String paymentFrequency, // DAILY, WEEKLY, BIWEEKLY, MONTHLY, QUARTERLY, SEMIANNUAL, ANNUAL
+        @NotNull(message = "La frecuencia de pago es obligatoria")
+        String paymentFrequency,
 
         @NotNull(message = "El método de amortización es obligatorio")
-        String amortizationMethod, // FRENCH o SIMPLE
+        String amortizationMethod,
 
-        @NotNull(message = "El plazo es obligatorio")
-        @Min(value = 1, message = "El plazo debe ser de al menos 1")
+        @NotNull(message = "El número de cuotas es obligatorio")
+        @Min(value = 1, message = "El número de cuotas debe ser al menos 1")
         Integer term,
 
-        @NotNull(message = "La fecha del primer pago es obligatoria")
+        @NotNull(message = "La fecha de apertura es obligatoria")
+        LocalDate openingDate,
+
+        // ✅ NUEVO: Fecha del primer pago
         LocalDate firstPaymentDate,
 
-        @NotNull(message = "La fecha de apertura es obligatoria")
-                LocalDate openingDate
-) {
-}
+        String dayCountConvention,
+        String earlyRepaymentPolicy,
+        Integer graceDays,
+        Boolean adjustForBusinessDays,
+
+        // ✅ NUEVOS CAMPOS para la especificación
+        String disbursementMethod,
+        BigDecimal administrativeFee,
+        String feeCollectionMode,
+        String moratoryType,
+        BigDecimal moratoryValue
+) {}

@@ -19,7 +19,9 @@ public class PaymentQueryController {
 
     private final PaymentRepository paymentRepository;
 
-    @GetMapping
+    // ✅ CORREGIDO: Cambiado a "/history" para evitar el conflicto de mapeo ambiguo
+    // con el @GetMapping base de PaymentController
+    @GetMapping("/history")
     public ResponseEntity<List<Payment>> getAllPayments(
             HttpServletRequest httpRequest,
             @RequestParam(required = false) UUID loanId,

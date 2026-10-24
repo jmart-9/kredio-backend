@@ -21,6 +21,7 @@ public record PaymentRequest(
         String method,
 
         Boolean isPrinted,
-        Boolean syncedFromOffline
+        Boolean syncedFromOffline,
+        UUID scheduleId
 ) {
 }
