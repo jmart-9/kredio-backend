@@ -1,0 +1,1 @@
+ALTER TABLE payments ADD COLUMN applied_to_principal DECIMAL(19,4);

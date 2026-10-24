@@ -20,7 +20,6 @@ spring:
     baseline-on-migrate: true
     out-of-order: true
 
-# ✅ CORRECCIÓN: 'jwt' y 'logging' deben estar al mismo nivel que 'spring', NO indentados debajo de él.
 jwt:
   secret: kredio-super-secret-key-2026-minimum-256-bits-long-change-in-production
   expiration: 86400000

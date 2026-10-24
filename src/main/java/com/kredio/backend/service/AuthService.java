@@ -56,6 +56,7 @@ public class AuthService {
                 });
 
         // 5. Determinar el nombre legible del rol
+        // ✅ CORRECTO
         String userRole = user.getRole() != null ? user.getRole() : "UNKNOWN";
         String roleName = switch (userRole) {
             case "ADMIN_GLOBAL" -> "Administrador Global";

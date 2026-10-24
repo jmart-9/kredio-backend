@@ -1,7 +1,9 @@
 package com.kredio.backend.config;
 
+import com.kredio.backend.entity.Role;
 import com.kredio.backend.entity.Tenant;
 import com.kredio.backend.entity.User;
+import com.kredio.backend.repository.RoleRepository;
 import com.kredio.backend.repository.TenantRepository;
 import com.kredio.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +14,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-
+import com.kredio.backend.entity.User;
 import javax.sql.DataSource;
 import java.util.UUID;
 
@@ -23,6 +25,7 @@ public class DataInitializer {
 
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
+    private final RoleRepository roleRepository; // ✅ AGREGADO
     private final PasswordEncoder passwordEncoder;
     private final DataSource dataSource;
     private final JdbcTemplate jdbcTemplate;
@@ -74,14 +77,21 @@ public class DataInitializer {
             UUID tenantId = demoTenant.getId();
             log.info("✅ Tenant registrado: {} (ID: {}, Schema: {})", demoTenant.getName(), tenantId, demoTenant.getSchemaName());
 
+            // ✅ OBTENER ROLES GLOBALES PARA ASIGNAR EL roleId CORRECTAMENTE
+            Role globalAdminRole = roleRepository.findFirstByNameAndIsGlobalTrue("ADMIN_GLOBAL")
+                    .orElseThrow(() -> new RuntimeException("Rol ADMIN_GLOBAL no encontrado. Ejecuta las migraciones primero."));
+            Role adminTenantRole = roleRepository.findFirstByNameAndIsGlobalTrue("ADMIN_TENANT")
+                    .orElseThrow(() -> new RuntimeException("Rol ADMIN_TENANT no encontrado."));
+            Role cobradorRole = roleRepository.findFirstByNameAndIsGlobalTrue("COBRADOR")
+                    .orElseThrow(() -> new RuntimeException("Rol COBRADOR no encontrado."));
+
             // 2. CREAR USUARIO ADMIN GLOBAL
-            // ⚠️ IMPORTANTE: Se asigna al 'tenantId' del Demo Tenant porque la BD exige que NO sea null.
-            // Sus permisos globales se otorgan mediante el ROL "ADMIN_GLOBAL", no mediante un tenant_id nulo.
             if (userRepository.findByEmailAndTenantId("admin@kredio.com", tenantId).isEmpty()) {
                 log.info("📝 Creando usuario ADMIN GLOBAL...");
                 User globalAdmin = User.builder()
                         .tenantId(tenantId)
                         .role("ADMIN_GLOBAL")
+                        .roleId(globalAdminRole.getId()) // ✅ ASIGNADO
                         .fullName("Administrador Global SaaS")
                         .email("admin@kredio.com")
                         .passwordHash(passwordEncoder.encode("admin123"))
@@ -98,6 +108,7 @@ public class DataInitializer {
                 User adminUser = User.builder()
                         .tenantId(tenantId)
                         .role("ADMIN_TENANT")
+                        .roleId(adminTenantRole.getId()) // ✅ ASIGNADO
                         .fullName("Admin del Tenant Demo")
                         .email("admin@demo.com")
                         .passwordHash(passwordEncoder.encode("admin123"))
@@ -113,7 +124,8 @@ public class DataInitializer {
                 log.info("📝 Creando usuario cobrador@demo.com...");
                 User collectorUser = User.builder()
                         .tenantId(tenantId)
-                        .role("COBRADOR")
+                        .role("COLLECTOR")
+                        .roleId(cobradorRole.getId()) // ✅ ASIGNADO
                         .fullName("Cobrador de Prueba")
                         .email("cobrador@demo.com")
                         .passwordHash(passwordEncoder.encode("admin123"))

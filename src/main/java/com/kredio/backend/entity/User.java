@@ -19,41 +19,53 @@ import java.util.UUID;
 public class User {
 
     @Id
-    @GeneratedValue(generator = "UUID")
-    @Column(name = "id", updatable = false, nullable = false)
+    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
-    @Column(name = "role", length = 50)
-    private String role;
-
     @Column(name = "role_id")
     private UUID roleId;
+
+    @Column(name = "role", nullable = false, length = 30)
+    private String role;  // ✅ String, no enum
 
     @Column(name = "full_name", nullable = false, length = 100)
     private String fullName;
 
-    @Column(name = "email", nullable = false, length = 100)
+    @Column(nullable = false, length = 100)
     private String email;
 
-    @Column(name = "password_hash", nullable = false)
+    @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
     @Column(name = "is_active")
-    private Boolean isActive;
-
-    @Column(name = "last_login_at")
-    private Instant lastLoginAt;
+    @Builder.Default
+    private Boolean isActive = true;
 
     @Column(name = "failed_login_attempts")
-    private Integer failedLoginAttempts;
+    @Builder.Default
+    private Integer failedLoginAttempts = 0;
 
     @Column(name = "account_locked_until")
     private Instant accountLockedUntil;
 
+    @Column(name = "last_login_at")
+    private Instant lastLoginAt;
+
+    @Column(name = "created_at")
     @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
     private Instant createdAt;
+
+    // ✅ NUEVOS CAMPOS PARA PIN (Fase 1)
+    @Column(name = "pin_hash", length = 255)
+    private String pinHash;
+
+    @Column(name = "pin_attempts")
+    @Builder.Default
+    private Integer pinAttempts = 0;
+
+    @Column(name = "pin_locked_until")
+    private Instant pinLockedUntil;
 }

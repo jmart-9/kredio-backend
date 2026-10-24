@@ -29,6 +29,10 @@ public interface LoanScheduleRepository extends JpaRepository<LoanSchedule, UUID
     List<LoanSchedule> findByTenantIdAndDueDateBeforeAndStatus(
             UUID tenantId, LocalDate dueDate, LoanSchedule.ScheduleStatus status);
 
+    List<LoanSchedule> findByLoanIdAndStatusOrderByInstallmentNumberAsc(
+            UUID loanId, LoanSchedule.ScheduleStatus status);
+
+
     // ✅ Sumar montos de cuotas vencidas (PENDING con dueDate < hoy)
     @Query("""
         SELECT COALESCE(SUM(ls.expectedAmount), 0)

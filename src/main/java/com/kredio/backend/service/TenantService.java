@@ -13,9 +13,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.kredio.backend.entity.User;
 import javax.sql.DataSource;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -87,17 +88,39 @@ public class TenantService {
         }
     }
 
-    // ✅ MÉTODO CORREGIDO: Ahora asigna el roleId correctamente
+    // ✅ MÉTODO CORREGIDO: Ahora verifica si el rol existe y lo crea si no existe
     private void createAdminUser(UUID tenantId, String email, String password, String fullName) {
         try {
-            // ✅ CAMBIADO: Usar findFirstByNameAndIsGlobalTrue para evitar duplicados
-            Role adminTenantRole = roleRepository.findFirstByNameAndIsGlobalTrue("ADMIN_TENANT")
-                    .orElseThrow(() -> new RuntimeException("Rol ADMIN_TENANT global no encontrado"));
+            // 1. Buscar el rol ADMIN_TENANT GLOBAL en la base de datos
+            Optional<Role> adminTenantRoleOpt = roleRepository.findFirstByNameAndIsGlobalTrue("ADMIN_TENANT");
 
+            Role adminTenantRole;
+            if (adminTenantRoleOpt.isEmpty()) {
+                log.warn("⚠️ Rol ADMIN_TENANT no encontrado, creándolo...");
+                // Crear el rol si no existe
+                adminTenantRole = Role.builder()
+                        .name("ADMIN_TENANT")
+                        .description("Administrador de Tenant")
+                        .isGlobal(true)
+                        .isSystem(true)
+                        .build();
+                adminTenantRole = roleRepository.save(adminTenantRole);
+                log.info("✅ Rol ADMIN_TENANT creado con ID: {}", adminTenantRole.getId());
+            } else {
+                adminTenantRole = adminTenantRoleOpt.get();
+            }
+
+            // 2. Verificar si el usuario ya existe
+            if (userRepository.findByEmailAndTenantId(email, tenantId).isPresent()) {
+                log.warn("⚠️ El usuario {} ya existe para el tenant {}, omitiendo creación", email, tenantId);
+                return;
+            }
+
+            // 3. Crear el usuario asignando el roleId
             User adminUser = User.builder()
                     .tenantId(tenantId)
                     .role("ADMIN_TENANT")
-                    .roleId(adminTenantRole.getId())
+                    .roleId(adminTenantRole.getId()) // ✅ Asigna el ID del rol global
                     .fullName(fullName)
                     .email(email)
                     .passwordHash(passwordEncoder.encode(password))
@@ -108,7 +131,7 @@ public class TenantService {
             userRepository.save(adminUser);
             log.info("✅ Usuario admin creado con rol ID {}: {}", adminTenantRole.getId(), email);
         } catch (Exception e) {
-            log.error("⚠️ Error al crear usuario admin: {}", e.getMessage());
+            log.error("️ Error al crear usuario admin: {}", e.getMessage(), e);
             throw new RuntimeException("Error al crear usuario admin: " + e.getMessage());
         }
     }

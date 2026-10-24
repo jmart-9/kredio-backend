@@ -62,7 +62,11 @@ public class LoanQueryService {
                             loan.getStatus().name(),
                             loan.getCurrentBalance(),
                             loan.getOpeningDate(),
-                            loan.getCreatedAt()
+                            loan.getCreatedAt(),
+                            loan.getDayCountConvention() != null ? loan.getDayCountConvention().name() : "ACTUAL_360",
+                            loan.getEarlyRepaymentPolicy() != null ? loan.getEarlyRepaymentPolicy().name() : "WITH_CONDONATION",
+                            loan.getGraceDays() != null ? loan.getGraceDays() : 0,
+                            loan.getAdjustForBusinessDays() != null ? loan.getAdjustForBusinessDays() : false
                     );
                 })
                 .collect(Collectors.toList());

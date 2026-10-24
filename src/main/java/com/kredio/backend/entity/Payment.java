@@ -2,26 +2,21 @@ package com.kredio.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "payments")
-@Getter
-@Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
+@Getter
+@Setter
 public class Payment {
 
     @Id
-    @GeneratedValue(generator = "UUID")
-    @Column(name = "id", updatable = false, nullable = false)
+    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @Column(name = "tenant_id", nullable = false)
@@ -39,15 +34,12 @@ public class Payment {
     @Column(name = "amount_paid", nullable = false, precision = 19, scale = 4)
     private BigDecimal amountPaid;
 
-    @Column(name = "excess_amount", precision = 19, scale = 4)
-    private BigDecimal excessAmount;
-
-    @Column(name = "payment_date", nullable = false)
-    private Instant paymentDate;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "method", nullable = false, length = 20)
     private PaymentMethod method;
+
+    @Column(name = "payment_date", nullable = false)
+    private Instant paymentDate;
 
     @Column(name = "is_printed")
     private Boolean isPrinted;
@@ -55,7 +47,6 @@ public class Payment {
     @Column(name = "synced_from_offline")
     private Boolean syncedFromOffline;
 
-    // ✅ CAMPOS PARA ANULACIÓN DE PAGOS
     @Column(name = "is_voided")
     private Boolean isVoided;
 
@@ -65,14 +56,41 @@ public class Payment {
     @Column(name = "voided_by")
     private UUID voidedBy;
 
-    @Column(name = "notes", columnDefinition = "TEXT")
+    @Column(name = "notes", length = 500)
     private String notes;
 
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private Instant createdAt;
+    @Column(name = "applied_to_principal", precision = 19, scale = 4)
+    private BigDecimal appliedToPrincipal;
+
+    @Column(name = "applied_to_moratory", precision = 19, scale = 4)
+    private BigDecimal appliedToMoratory;
+
+    @Column(name = "applied_to_interest", precision = 19, scale = 4)
+    private BigDecimal appliedToInterest;
+
+    @Column(name = "excess_amount", precision = 19, scale = 4)
+    private BigDecimal excessAmount;
+
+    // ✅ NUEVOS CAMPOS para anulación (Fase 1)
+    @Column(name = "annulment_reason", length = 500)
+    private String annulmentReason;
+
+    @Column(name = "annulled_by_user_id")
+    private UUID annulledByUserId;
+
+    @Column(name = "annulled_at")
+    private Instant annulledAt;
+
+    @Column(name = "client_transaction_uuid", unique = true)
+    private UUID clientTransactionUuid;
+
+    @Column(name = "latitude", precision = 10, scale = 8)
+    private BigDecimal latitude;
+
+    @Column(name = "longitude", precision = 11, scale = 8)
+    private BigDecimal longitude;
 
     public enum PaymentMethod {
-        CASH, TRANSFER, CHECK, OTHER
+        CASH, TRANSFER, CHECK
     }
 }

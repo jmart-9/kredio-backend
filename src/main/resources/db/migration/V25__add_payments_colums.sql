@@ -1,0 +1,4 @@
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS applied_to_moratory NUMERIC(19,4);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS applied_to_interest NUMERIC(19,4);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS applied_to_principal NUMERIC(19,4);
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS excess_amount NUMERIC(19,4);
